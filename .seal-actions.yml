@@ -1,0 +1,42 @@
+meta:
+  schema-version: 0.1.0
+  created-on: "2026-03-01T00:00:00Z"
+  cli-version: 0.3.282
+
+projects:
+  jfrog-maven-demo:
+    targets:
+      - pom.xml
+    manager:
+      ecosystem: java
+      name: maven
+      version: ""
+      class: manifest
+    overrides:
+      org.yaml:snakeyaml:
+        "1.33":
+          use: 1.33+sp1
+      com.fasterxml.jackson.core:jackson-databind:
+        "2.13.1":
+          use: 2.13.1+sp1
+      org.apache.commons:commons-text:
+        "1.9":
+          use: 1.9+sp1
+      org.springframework:spring-core:
+        "5.3.26":
+          use: 5.3.26+sp1
+      org.springframework:spring-web:
+        "5.3.26":
+          use: 5.3.26+sp1
+      com.fasterxml.jackson.core:jackson-core:
+        "2.13.4":
+          use: 2.13.4+sp1
+      net.minidev:json-smart:
+        "2.4.8":
+          use: 2.4.8+sp1
+      org.apache.commons:commons-lang3:
+        "3.12.0":
+          use: 3.12.0+sp1
+      org.springframework.boot:spring-boot:
+        "2.7.18":
+          use: 2.7.18+sp1
