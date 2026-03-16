@@ -105,6 +105,12 @@ jobs:
           chmod +x /tmp/seal-cli/seal-linux-amd64
           /tmp/seal-cli/seal-linux-amd64 version
 
+      # Pre-populate ~/.m2/repository so the Seal CLI can read the local JARs.
+      # The CLI scans existing JARs to determine what needs patching — if they
+      # aren't present it can't detect or fix anything.
+      - name: Resolve Maven Dependencies (via JFrog)
+        run: mvn dependency:resolve -B
+
       # The Seal CLI fixes vulnerabilities by swapping in sealed package versions.
       # --jfrog flags tell the CLI to fetch sealed packages through JFrog instead
       # of reaching Seal's artifact servers directly.
