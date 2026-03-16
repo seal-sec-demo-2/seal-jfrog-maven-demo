@@ -90,9 +90,6 @@ jobs:
           </settings>
           EOF
 
-      - name: Download Dependencies (via JFrog)
-        run: mvn dependency:resolve -B
-
       # Downloads the dev CLI build from seal-sean-org/seal-cli-dev.
       # This build includes --jfrog, --jfrog-host, --jfrog-token CLI flags
       # and multi-ecosystem JFrog support (fixes the Maven-only bug).
