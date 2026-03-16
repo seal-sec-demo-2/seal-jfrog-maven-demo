@@ -97,7 +97,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.SEAL_CLI_DEV_TOKEN }}
         run: |
-          gh release download v0.1.1-jfrog \
+          gh release download v0.1.2-jfrog \
             --repo seal-sean-org/seal-cli-dev \
             --pattern "seal-linux-amd64.zip" \
             --output /tmp/seal-linux-amd64.zip
