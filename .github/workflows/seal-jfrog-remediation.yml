@@ -11,15 +11,16 @@ name: Seal Security + JFrog Remediation
 #   3. Add seal-mvn to your Maven virtual repository (e.g. libs-release or libs-release-local aggregation)
 #
 # GitHub Secrets required:
-#   SEAL_TOKEN       - Seal Security artifact server token
-#   JFROG_TOKEN      - JFrog reference token (User scope, never expires)
-#   JFROG_HOST       - JFrog hostname, e.g. mycompany.jfrog.io
-#   JFROG_USER       - JFrog username
-#   SNYK_TOKEN       - Snyk API token
-#   SNYK_ORG_ID      - Snyk organization ID
-#   SNYK_PROJECT_ID  - Snyk project ID for this repo (add after Snyk import)
-#   NGROK_TOKEN      - ngrok authtoken
-#   NGROK_URL        - Your reserved ngrok domain, e.g. my-domain.ngrok.dev
+#   SEAL_TOKEN           - Seal Security artifact server token
+#   JFROG_TOKEN          - JFrog reference token (User scope, never expires)
+#   JFROG_HOST           - JFrog hostname, e.g. mycompany.jfrog.io
+#   JFROG_USER           - JFrog username
+#   SNYK_TOKEN           - Snyk API token
+#   SNYK_ORG_ID          - Snyk organization ID
+#   SNYK_PROJECT_ID      - Snyk project ID for this repo (add after Snyk import)
+#   NGROK_TOKEN          - ngrok authtoken
+#   NGROK_URL            - Your reserved ngrok domain, e.g. my-domain.ngrok.dev
+#   SEAL_CLI_DEV_TOKEN   - PAT with repo read access to seal-sean-org/seal-cli-dev
 
 on:
   workflow_dispatch:
@@ -92,26 +93,39 @@ jobs:
       - name: Download Dependencies (via JFrog)
         run: mvn dependency:resolve -B
 
-      # The Seal CLI fixes vulnerabilities by swapping in sealed package versions.
-      # SEAL_JFROG_ENABLED tells the CLI to fetch sealed packages through JFrog
-      # (using the seal-cli generic remote repo) instead of reaching Seal directly.
-      - name: Seal Security — Fix Vulnerabilities via JFrog
-        uses: seal-community/cli-action@latest
-        with:
-          mode: fix
-          fix_mode: ${{ github.event.inputs.fix_mode || 'remote' }}
-          target: pom.xml
-          token: ${{ secrets.SEAL_TOKEN }}
+      # Downloads the dev CLI build from seal-sean-org/seal-cli-dev.
+      # This build includes --jfrog, --jfrog-host, --jfrog-token CLI flags
+      # and multi-ecosystem JFrog support (fixes the Maven-only bug).
+      - name: Download Dev Seal CLI
         env:
-          # JFrog integration — CLI downloads sealed packages through JFrog
-          SEAL_JFROG_ENABLED: "1"
-          SEAL_JFROG_AUTH_TOKEN: ${{ secrets.JFROG_TOKEN }}
-          SEAL_JFROG_INSTANCE_HOST: ${{ secrets.JFROG_HOST }}
+          GH_TOKEN: ${{ secrets.SEAL_CLI_DEV_TOKEN }}
+        run: |
+          gh release download v0.1.0-jfrog \
+            --repo seal-sean-org/seal-cli-dev \
+            --pattern "seal-linux-amd64.zip" \
+            --output /tmp/seal-linux-amd64.zip
+          unzip /tmp/seal-linux-amd64.zip -d /tmp/seal-cli
+          chmod +x /tmp/seal-cli/seal-linux-amd64
+          /tmp/seal-cli/seal-linux-amd64 version
+
+      # The Seal CLI fixes vulnerabilities by swapping in sealed package versions.
+      # --jfrog flags tell the CLI to fetch sealed packages through JFrog instead
+      # of reaching Seal's artifact servers directly.
+      - name: Seal Security — Fix Vulnerabilities via JFrog
+        env:
+          SEAL_TOKEN: ${{ secrets.SEAL_TOKEN }}
           # Snyk integration — CLI marks remediated CVEs as resolved in Snyk
           SEAL_SNYK_URL: "https://api.snyk.io"
           SEAL_SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
           SEAL_SNYK_ORG_ID: ${{ secrets.SNYK_ORG_ID }}
           SEAL_SNYK_PROJECT_ID: ${{ secrets.SNYK_PROJECT_ID }}
+        run: |
+          /tmp/seal-cli/seal-linux-amd64 -v fix \
+            --mode ${{ github.event.inputs.fix_mode || 'remote' }} \
+            --jfrog \
+            --jfrog-host ${{ secrets.JFROG_HOST }} \
+            --jfrog-token ${{ secrets.JFROG_TOKEN }} \
+            pom.xml
 
       - name: Build Application
         run: mvn package -DskipTests -B
